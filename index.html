@@ -151,11 +151,33 @@ footer { border-top:1px solid var(--line);padding:24px 22px;text-align:center;co
   main { padding-left:14px;padding-right:14px; }
 }
 
-.approved-banner { background:#06296d; width:100%; overflow:hidden; }
-.approved-banner img { display:block; width:100%; height:auto; max-height:322px; object-fit:cover; object-position:center; }
-@media(max-width:700px) {
-  .approved-banner img { min-height:185px; object-fit:cover; object-position:center; }
+
+.approved-banner{
+  background:#06296d;
+  width:100%;
+  overflow:hidden;
 }
+.approved-banner img{
+  display:block;
+  width:100%;
+  max-width:100%;
+  height:auto;
+  object-fit:contain;
+  object-position:center;
+}
+@media(max-width:700px){
+  .approved-banner{
+    padding:0 14px;
+  }
+  .approved-banner img{
+    width:100%;
+    max-width:100%;
+    height:auto;
+    min-height:0;
+    object-fit:contain;
+  }
+}
+
 
 
 .saved-jobs{margin-top:32px;background:#fff;border:1px solid var(--line);border-radius:22px;padding:26px;box-shadow:var(--shadow)}
