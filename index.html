@@ -157,6 +157,31 @@ footer { border-top:1px solid var(--line);padding:24px 22px;text-align:center;co
   .approved-banner img { min-height:185px; object-fit:cover; object-position:center; }
 }
 
+
+.saved-jobs{margin-top:32px;background:#fff;border:1px solid var(--line);border-radius:22px;padding:26px;box-shadow:var(--shadow)}
+.saved-jobs h2{margin:0 0 6px;color:var(--collin);font-size:24px}
+.saved-jobs .sub{color:var(--muted);margin:0 0 18px;line-height:1.5}
+.tracker-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.tracker-actions button,.file-label{border:0;border-radius:10px;padding:11px 14px;font-weight:800;cursor:pointer;background:var(--collin);color:#fff}
+.tracker-actions button.secondary,.file-label.secondary{background:#475569}
+.file-label input{display:none}
+.add-job-form{display:none;grid-template-columns:1fr 1.4fr auto;gap:10px;align-items:end;background:var(--soft);padding:14px;border-radius:12px;margin-bottom:16px}
+.add-job-form.show{display:grid}
+.add-job-form .field{margin:0}
+.add-job-form button{border:0;border-radius:10px;padding:13px 14px;font-weight:800;background:var(--accent);color:#fff;cursor:pointer}
+.tracker-table-wrap{overflow-x:auto}
+.tracker-table{width:100%;border-collapse:collapse;min-width:760px}
+.tracker-table th,.tracker-table td{border-bottom:1px solid var(--line);padding:11px 10px;text-align:left;vertical-align:middle}
+.tracker-table th{background:#f7f9fc;color:var(--collin);font-size:13px}
+.tracker-table td{font-size:14px}
+.tracker-link{display:inline-block;color:var(--collin);font-weight:700;text-decoration:none}
+.tracker-link:hover{text-decoration:underline}
+.applied-cell{text-align:center!important}
+.remove-job{border:1px solid #c7d0df;background:#fff;color:#7b1e1e;border-radius:8px;padding:7px 9px;cursor:pointer;font-weight:700}
+.empty-tracker{padding:18px;border:1px dashed #cbd5e1;border-radius:10px;color:#64748b;background:#fafcff}
+.tracker-note{margin-top:12px;font-size:12.5px;line-height:1.45;color:#667085}
+@media(max-width:760px){.add-job-form.show{grid-template-columns:1fr}}
+
 </style>
 </head>
 <body>
@@ -245,6 +270,35 @@ footer { border-top:1px solid var(--line);padding:24px 22px;text-align:center;co
       <button class="reset" id="resetBtn">Start a new search</button>
     </div>
   </section>
+
+<section class="saved-jobs" id="savedJobsSection">
+  <h2>My Saved Opportunities</h2>
+  <p class="sub">Save promising job postings while you search, track whether you applied, and download the list to your device.</p>
+  <div class="tracker-actions">
+    <button id="toggleAddJob" type="button">+ Add a Job Posting</button>
+    <button id="downloadTracker" type="button" class="secondary">Download Job Tracker</button>
+    <label class="file-label secondary">Upload Saved Tracker
+      <input id="uploadTracker" type="file" accept=".csv,text/csv">
+    </label>
+  </div>
+  <div class="add-job-form" id="addJobForm">
+    <div class="field">
+      <label for="savedJobTitle">Job title / company</label>
+      <input id="savedJobTitle" type="text" placeholder="Example: Radiologic Technologist – ABC Health">
+    </div>
+    <div class="field">
+      <label for="savedJobUrl">Posting URL</label>
+      <input id="savedJobUrl" type="text" placeholder="Paste the job posting URL">
+    </div>
+    <button id="saveJobBtn" type="button">Save Job</button>
+  </div>
+  <div id="trackerContent"></div>
+  <div class="tracker-note">
+    Saved jobs are stored in this browser on this device. Download your tracker if you want a portable copy.
+    Job postings may expire or move, so saved links may stop working over time.
+  </div>
+</section>
+
 </main>
 
 <footer>Developed by the Collin College Career Center © 2026</footer>
@@ -368,6 +422,84 @@ document.getElementById('resetBtn').addEventListener('click',()=>{
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
 }
+
+const TRACKER_KEY='opportunitySpringboardSavedJobs_v1';
+let savedJobs=loadSavedJobs();
+
+function loadSavedJobs(){try{const raw=localStorage.getItem(TRACKER_KEY);return raw?JSON.parse(raw):[]}catch(e){return[]}}
+function persistSavedJobs(){try{localStorage.setItem(TRACKER_KEY,JSON.stringify(savedJobs))}catch(e){}}
+function todayStamp(){const d=new Date();return `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`}
+function normalizeUrl(url){const u=String(url||'').trim();if(!u)return'';return /^https?:\/\//i.test(u)?u:'https://'+u}
+function currentSearchContext(){
+  const program=els.program.value||'';
+  const pathway=els.pathway.value||'';
+  const role=selectedRole&&selectedRole.role?selectedRole.role:'';
+  return [program,pathway,role].filter(Boolean).join(' • ');
+}
+function renderTracker(){
+  const wrap=document.getElementById('trackerContent');
+  if(!savedJobs.length){
+    wrap.innerHTML='<div class="empty-tracker">No saved opportunities yet. Use “Add a Job Posting” after you find a job you want to revisit.</div>';
+    return;
+  }
+  const rows=savedJobs.map((j,i)=>`
+    <tr>
+      <td>${escapeHtml(j.date||'')}</td>
+      <td><div><strong>${escapeHtml(j.title||'')}</strong></div>${j.context?`<div class="helper">${escapeHtml(j.context)}</div>`:''}</td>
+      <td><a class="tracker-link" href="${escapeHtml(j.url||'#')}" target="_blank" rel="noopener noreferrer">Open Posting</a></td>
+      <td class="applied-cell"><input type="checkbox" data-applied-index="${i}" ${j.applied?'checked':''} aria-label="Mark application completed"></td>
+      <td><button class="remove-job" type="button" data-remove-index="${i}">Remove</button></td>
+    </tr>`).join('');
+  wrap.innerHTML=`<div class="tracker-table-wrap"><table class="tracker-table">
+    <thead><tr><th>Date Saved</th><th>Job / Company</th><th>Posting</th><th>Applied</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+  wrap.querySelectorAll('[data-applied-index]').forEach(cb=>cb.addEventListener('change',e=>{
+    const i=Number(e.target.dataset.appliedIndex);savedJobs[i].applied=e.target.checked;persistSavedJobs();
+  }));
+  wrap.querySelectorAll('[data-remove-index]').forEach(btn=>btn.addEventListener('click',e=>{
+    const i=Number(e.currentTarget.dataset.removeIndex);savedJobs.splice(i,1);persistSavedJobs();renderTracker();
+  }));
+}
+document.getElementById('toggleAddJob').addEventListener('click',()=>{
+  const form=document.getElementById('addJobForm');form.classList.toggle('show');
+  if(form.classList.contains('show'))document.getElementById('savedJobTitle').focus();
+});
+document.getElementById('saveJobBtn').addEventListener('click',()=>{
+  const titleEl=document.getElementById('savedJobTitle'),urlEl=document.getElementById('savedJobUrl');
+  const title=titleEl.value.trim(),url=normalizeUrl(urlEl.value);
+  if(!title||!url){alert('Please enter a job title/company and paste the posting URL.');return}
+  savedJobs.unshift({date:todayStamp(),title,url,applied:false,context:currentSearchContext()});
+  persistSavedJobs();titleEl.value='';urlEl.value='';document.getElementById('addJobForm').classList.remove('show');renderTracker();
+});
+document.getElementById('downloadTracker').addEventListener('click',()=>{
+  const header=['Date Saved','Job / Company','Posting URL','Applied','Search Context'];
+  const rows=savedJobs.map(j=>[j.date||'',j.title||'',j.url||'',j.applied?'Yes':'No',j.context||'']);
+  const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}),a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download='Opportunity_Springboard_Job_Tracker.csv';document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},0);
+});
+document.getElementById('uploadTracker').addEventListener('change',async e=>{
+  const file=e.target.files&&e.target.files[0];if(!file)return;
+  const parsed=parseCsv(await file.text());
+  if(!parsed.length){alert('No valid tracker rows were found in that CSV file.');e.target.value='';return}
+  savedJobs=parsed;persistSavedJobs();renderTracker();e.target.value='';
+});
+function parseCsv(text){
+  const rows=[];let row=[],cell='',quoted=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(quoted){if(ch==='"'&&text[i+1]==='"'){cell+='"';i++}else if(ch==='"')quoted=false;else cell+=ch}
+    else{if(ch==='"')quoted=true;else if(ch===','){row.push(cell);cell=''}else if(ch==='\n'){row.push(cell.replace(/\r$/,''));rows.push(row);row=[];cell=''}else cell+=ch}
+  }
+  if(cell.length||row.length){row.push(cell.replace(/\r$/,''));rows.push(row)}
+  return rows.slice(1).filter(r=>r.some(v=>String(v).trim())).map(r=>({
+    date:(r[0]||'').trim(),title:(r[1]||'').trim(),url:normalizeUrl((r[2]||'').trim()),
+    applied:/^(yes|true|1|applied)$/i.test((r[3]||'').trim()),context:(r[4]||'').trim()
+  })).filter(j=>j.title&&j.url);
+}
+renderTracker();
+
 </script>
 </body>
 </html>
