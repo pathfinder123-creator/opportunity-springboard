@@ -183,6 +183,7 @@ footer { border-top:1px solid var(--line);padding:24px 22px;text-align:center;co
 @media(max-width:760px){.add-job-form.show{grid-template-columns:1fr}}
 
 </style>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 <header class="site-header">
@@ -294,7 +295,7 @@ footer { border-top:1px solid var(--line);padding:24px 22px;text-align:center;co
   </div>
   <div id="trackerContent"></div>
   <div class="tracker-note">
-    Saved jobs are stored in this browser on this device. Download your tracker as an Excel workbook if you want a polished, portable copy.
+    Saved jobs are stored in this browser on this device. Download your tracker as an Excel workbook if you want a portable copy.
     Job postings may expire or move, so saved links may stop working over time.
   </div>
 </section>
@@ -473,92 +474,85 @@ document.getElementById('saveJobBtn').addEventListener('click',()=>{
 });
 
 document.getElementById('downloadTracker').addEventListener('click',()=>{
-  const bytes=buildTrackerXlsx(savedJobs);
-  const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='Opportunity_Springboard_Job_Tracker.xlsx';
-  document.body.appendChild(a);a.click();
-  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},0);
-});
-document.getElementById('uploadTracker').addEventListener('change',async e=>{
-  const file=e.target.files&&e.target.files[0];if(!file)return;
-  try{
-    const parsed=parseTrackerXlsx(new Uint8Array(await file.arrayBuffer()));
-    if(!parsed.length){alert('No valid tracker rows were found in that Excel file.');e.target.value='';return}
-    savedJobs=parsed;persistSavedJobs();renderTracker();e.target.value='';
-  }catch(err){
-    console.error(err);alert('That file could not be read as an Opportunity Springboard Job Tracker.');e.target.value='';
+  if(typeof XLSX==='undefined'){
+    alert('The Excel export component could not load. Please check your internet connection and try again.');
+    return;
   }
-});
-function xmlEscape(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;')}
-function colName(n){let s='';while(n){n--;s=String.fromCharCode(65+(n%26))+s;n=Math.floor(n/26)}return s}
-function crc32(bytes){
-  if(!crc32.table){const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}crc32.table=t}
-  let c=0xFFFFFFFF;for(const b of bytes)c=crc32.table[(c^b)&255]^(c>>>8);return(c^0xFFFFFFFF)>>>0
-}
-function u16(n){return new Uint8Array([n&255,(n>>>8)&255])}
-function u32(n){return new Uint8Array([n&255,(n>>>8)&255,(n>>>16)&255,(n>>>24)&255])}
-function concatBytes(parts){const total=parts.reduce((a,p)=>a+p.length,0),out=new Uint8Array(total);let o=0;for(const p of parts){out.set(p,o);o+=p.length}return out}
-function utf8(s){return new TextEncoder().encode(s)}
-function makeZip(files){
-  const locals=[],centrals=[];let offset=0;
-  for(const f of files){
-    const name=utf8(f.name),data=typeof f.data==='string'?utf8(f.data):f.data,crc=crc32(data);
-    const local=concatBytes([u32(0x04034b50),u16(20),u16(0),u16(0),u16(0),u16(0),u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0),name,data]);
-    locals.push(local);
-    centrals.push(concatBytes([u32(0x02014b50),u16(20),u16(20),u16(0),u16(0),u16(0),u16(0),u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(offset),name]));
-    offset+=local.length;
-  }
-  const centralBlob=concatBytes(centrals);
-  const end=concatBytes([u32(0x06054b50),u16(0),u16(0),u16(files.length),u16(files.length),u32(centralBlob.length),u32(offset),u16(0)]);
-  return concatBytes([...locals,centralBlob,end]);
-}
-function xlsxCell(ref,value,style=0){return `<c r="${ref}" t="inlineStr"${style?` s="${style}"`:''}><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`}
-function xlsxBoolCell(ref,val,style=0){return `<c r="${ref}" t="inlineStr"${style?` s="${style}"`:''}><is><t>${val?'Yes':'No'}</t></is></c>`}
-function buildTrackerXlsx(jobs){
-  const headers=['Date Saved','Job / Company','Posting URL','Applied','Search Context'],rows=[];
-  rows.push(`<row r="1" ht="28">${xlsxCell('A1','Opportunity Springboard Job Tracker',1)}</row>`);
-  rows.push(`<row r="2" ht="20">${xlsxCell('A2','Collin College Career Center',2)}</row>`);
-  rows.push(`<row r="4" ht="22">${headers.map((h,i)=>xlsxCell(colName(i+1)+'4',h,3)).join('')}</row>`);
-  const hyperlinks=[];
-  jobs.forEach((j,idx)=>{
-    const r=idx+5;
-    rows.push(`<row r="${r}" ht="32">${xlsxCell('A'+r,j.date||'',4)+xlsxCell('B'+r,j.title||'',4)+xlsxCell('C'+r,j.url||'',5)+xlsxBoolCell('D'+r,!!j.applied,4)+xlsxCell('E'+r,j.context||'',4)}</row>`);
-    if(j.url)hyperlinks.push(`<hyperlink ref="C${r}" r:id="rId${idx+1}"/>`);
+  const rows = savedJobs.map(j => ({
+    'Date Saved': j.date || '',
+    'Job / Company': j.title || '',
+    'Posting URL': j.url || '',
+    'Applied': j.applied ? 'Yes' : 'No',
+    'Search Context': j.context || ''
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows, {
+    header:['Date Saved','Job / Company','Posting URL','Applied','Search Context']
   });
-  const last=Math.max(4,jobs.length+4);
-  const sheet=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetViews><sheetView workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="14" customWidth="1"/><col min="2" max="2" width="38" customWidth="1"/><col min="3" max="3" width="52" customWidth="1"/><col min="4" max="4" width="12" customWidth="1"/><col min="5" max="5" width="48" customWidth="1"/></cols><sheetData>${rows.join('')}</sheetData><autoFilter ref="A4:E${last}"/>${hyperlinks.length?`<hyperlinks>${hyperlinks.join('')}</hyperlinks>`:''}</worksheet>`;
-  const rels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${jobs.map((j,idx)=>j.url?`<Relationship Id="rId${idx+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${xmlEscape(j.url)}" TargetMode="External"/>`:'').join('')}</Relationships>`;
-  const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="5"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="18"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FF0C2E82"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><u/><color rgb="FF0563C1"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0C2E82"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFD9E1EE"/></left><right style="thin"><color rgb="FFD9E1EE"/></right><top style="thin"><color rgb="FFD9E1EE"/></top><bottom style="thin"><color rgb="FFD9E1EE"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0"/><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment vertical="top" wrapText="1"/></xf><xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
-  const workbook=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Saved Opportunities" sheetId="1" r:id="rId1"/></sheets></workbook>`;
-  const wbRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
-  const rootRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
-  const types=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`;
-  return makeZip([{name:'[Content_Types].xml',data:types},{name:'_rels/.rels',data:rootRels},{name:'xl/workbook.xml',data:workbook},{name:'xl/_rels/workbook.xml.rels',data:wbRels},{name:'xl/styles.xml',data:styles},{name:'xl/worksheets/sheet1.xml',data:sheet},{name:'xl/worksheets/_rels/sheet1.xml.rels',data:rels}]);
-}
-function readU16(b,o){return b[o]|(b[o+1]<<8)}
-function readU32(b,o){return(b[o]|(b[o+1]<<8)|(b[o+2]<<16)|(b[o+3]<<24))>>>0}
-function unzipStoredFile(bytes,target){
-  let o=0;
-  while(o+30<=bytes.length&&readU32(bytes,o)===0x04034b50){
-    const method=readU16(bytes,o+8),comp=readU32(bytes,o+18),nameLen=readU16(bytes,o+26),extraLen=readU16(bytes,o+28);
-    const name=new TextDecoder().decode(bytes.slice(o+30,o+30+nameLen)),dataStart=o+30+nameLen+extraLen;
-    if(name===target){if(method!==0)throw new Error('Unsupported compressed XLSX');return bytes.slice(dataStart,dataStart+comp)}
-    o=dataStart+comp;
+
+  ws['!cols'] = [
+    {wch:14},
+    {wch:38},
+    {wch:52},
+    {wch:12},
+    {wch:48}
+  ];
+
+  for(let r=2; r<=rows.length+1; r++){
+    const addr='C'+r;
+    if(ws[addr] && ws[addr].v){
+      ws[addr].l = {Target:String(ws[addr].v), Tooltip:'Open job posting'};
+    }
   }
-  throw new Error('Worksheet not found');
-}
-function parseTrackerXlsx(bytes){
-  const xml=new TextDecoder().decode(unzipStoredFile(bytes,'xl/worksheets/sheet1.xml'));
-  const doc=new DOMParser().parseFromString(xml,'application/xml'),ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main',rows=[...doc.getElementsByTagNameNS(ns,'row')],out=[];
-  for(const row of rows){
-    const r=Number(row.getAttribute('r')||0);if(r<5)continue;const vals={};
-    for(const c of [...row.getElementsByTagNameNS(ns,'c')]){const ref=c.getAttribute('r')||'',col=(ref.match(/[A-Z]+/)||[''])[0],t=c.getElementsByTagNameNS(ns,'t')[0];vals[col]=t?t.textContent:''}
-    if(vals.B&&vals.C)out.push({date:vals.A||'',title:vals.B||'',url:normalizeUrl(vals.C||''),applied:/^yes$/i.test(vals.D||''),context:vals.E||''});
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Saved Opportunities');
+  wb.Props = {
+    Title:'Opportunity Springboard Job Tracker',
+    Subject:'Saved job opportunities',
+    Author:'Collin College Career Center',
+    Company:'Collin College'
+  };
+
+  XLSX.writeFile(wb,'Opportunity_Springboard_Job_Tracker.xlsx',{compression:true});
+});
+
+document.getElementById('uploadTracker').addEventListener('change', async e=>{
+  const file=e.target.files&&e.target.files[0];
+  if(!file)return;
+  if(typeof XLSX==='undefined'){
+    alert('The Excel import component could not load. Please check your internet connection and try again.');
+    e.target.value='';
+    return;
   }
-  return out;
-}
+  try{
+    const ab=await file.arrayBuffer();
+    const wb=XLSX.read(ab,{type:'array'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+    const parsed=rows.map(r=>({
+      date:String(r['Date Saved']||'').trim(),
+      title:String(r['Job / Company']||'').trim(),
+      url:normalizeUrl(String(r['Posting URL']||'').trim()),
+      applied:/^(yes|true|1|applied)$/i.test(String(r['Applied']||'').trim()),
+      context:String(r['Search Context']||'').trim()
+    })).filter(j=>j.title&&j.url);
+
+    if(!parsed.length){
+      alert('No valid tracker rows were found in that Excel file.');
+      e.target.value='';
+      return;
+    }
+    savedJobs=parsed;
+    persistSavedJobs();
+    renderTracker();
+    e.target.value='';
+  }catch(err){
+    console.error(err);
+    alert('That file could not be read as an Opportunity Springboard Job Tracker.');
+    e.target.value='';
+  }
+});
 renderTracker();
 
 </script>
